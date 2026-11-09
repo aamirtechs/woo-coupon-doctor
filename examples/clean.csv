@@ -1,0 +1,4 @@
+code,discount_type,amount,usage_count,usage_limit,expiry_date,date_created,minimum_amount,maximum_amount,free_shipping,status,individual_use
+WELCOME10,percent,10,45,100,2027-01-31,2026-01-05,0,,no,publish,no
+FREESHIP,fixed_cart,0,12,,2027-06-30,2026-02-01,0,,yes,publish,no
+CLEAN5,fixed_cart,5,3,20,2027-03-01,2026-01-10,25,,no,publish,no

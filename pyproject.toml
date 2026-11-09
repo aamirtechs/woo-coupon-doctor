@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "woo-coupon-doctor"
+version = "1.0.0"
+description = "Audit a WooCommerce coupons CSV export"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+[project.scripts]
+woo-coupon-doctor = "woo_coupon_doctor:main_entry"
+
+[tool.setuptools]
+py-modules = ["woo_coupon_doctor"]

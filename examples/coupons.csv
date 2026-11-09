@@ -1,0 +1,15 @@
+code,discount_type,amount,usage_count,usage_limit,expiry_date,date_created,minimum_amount,maximum_amount,free_shipping,status,individual_use
+WELCOME10,percent,10,45,100,2027-01-31,2026-01-05,0,,no,publish,no
+SAVE20,percent,20,0,50,2026-10-01,2026-08-15,0,,no,publish,no
+FREESHIP,fixed_cart,0,12,,2027-06-30,2026-02-01,0,,yes,publish,no
+BIG50,percent,50,120,100,2027-12-31,2026-03-10,0,,no,publish,no
+MEGA150,percent,150,5,100,2027-05-01,2026-04-20,0,,no,publish,no
+welcome10,percent,10,2,50,2027-02-01,2026-05-01,0,,no,publish,no
+OLDDEAL,percent,15,0,,2025-01-01,2024-12-01,0,,no,draft,no
+NODEAL,percent,25,0,,,2026-06-01,0,,no,publish,no
+BADTYPE,bogus,10,0,10,2027-01-01,2026-01-01,0,,no,publish,no
+MINMAX,percent,10,0,10,2027-01-01,2026-01-01,200,100,no,publish,no
+BACKWARD,percent,10,0,10,2026-10-01,2026-11-01,0,,no,publish,no
+SPACED CODE,percent,10,1,10,2027-04-01,2026-01-01,0,,no,publish,no
+,percent,10,0,10,2027-01-01,2026-01-01,0,,no,publish,no
+CLEAN5,fixed_cart,5,3,20,2027-03-01,2026-01-10,25,,no,publish,no
