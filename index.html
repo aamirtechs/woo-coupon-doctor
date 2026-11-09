@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>woo-coupon-doctor by AamirTechs</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f6f8fb; color: #1c2733; }
+header { background: #0b1f3a; color: #ffffff; padding: 28px 20px 22px; border-bottom: 4px solid #d4a72c; }
+header .wrap, main, footer .wrap { max-width: 880px; margin: 0 auto; }
+header h1 { margin: 0 0 6px; font-size: 28px; }
+header p { margin: 0; color: #c9d6e8; font-size: 15px; }
+main { padding: 24px 20px 8px; }
+.card { background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(11, 31, 58, 0.12); }
+label { display: block; font-weight: 600; margin: 14px 0 6px; font-size: 14px; }
+label:first-child { margin-top: 0; }
+textarea { width: 100%; min-height: 180px; padding: 10px; border: 1px solid #c3cedd; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+input[type="text"], input[type="number"], input[type="date"], select { padding: 8px 10px; border: 1px solid #c3cedd; border-radius: 8px; font-size: 14px; background: #ffffff; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.controls .field label { margin-top: 0; }
+.checkline { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding-bottom: 9px; }
+.checkline input { width: 16px; height: 16px; }
+.buttons { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 10px; }
+button { border: 0; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+button.primary { background: #0b1f3a; color: #ffffff; }
+button.primary:hover { background: #14315c; }
+button.secondary { background: #eef2f8; color: #0b1f3a; border: 1px solid #c3cedd; }
+button.accent { background: #d4a72c; color: #0b1f3a; }
+pre { background: #0b1f3a; color: #e8eef7; border-radius: 8px; padding: 14px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 13px; min-height: 60px; }
+.hint { font-size: 13px; color: #5a6b82; margin-top: 6px; }
+footer { padding: 18px 20px 30px; color: #5a6b82; font-size: 13px; }
+footer a { color: #0b1f3a; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>woo-coupon-doctor</h1>
+    <p>Audit a WooCommerce coupons CSV export for expired, over-limit and duplicate coupons.</p>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <label for="file">Choose a file</label>
+    <input type="file" id="file" accept=".csv,text/csv,text/plain">
+    <label for="input">Or paste the coupons CSV export</label>
+    <textarea id="input" placeholder="code,discount_type,amount,usage_count,usage_limit,expiry_date,..."></textarea>
+
+    <div class="controls" style="margin-top:14px;">
+      <div class="field">
+        <label for="opt-asof">As of (optional)</label>
+        <input type="date" id="opt-asof">
+      </div>
+      <div class="field">
+        <label for="opt-status">Only this status (optional)</label>
+        <input type="text" id="opt-status" placeholder="publish">
+      </div>
+    </div>
+    <div class="buttons">
+      <button type="button" class="primary" id="run">Run</button>
+      <button type="button" class="secondary" id="sample">Load sample</button>
+      <button type="button" class="accent" id="download" disabled>Download report</button>
+    </div>
+    <label for="output">Report</label>
+    <pre id="output">Your report will appear here.</pre>
+    <p class="hint">Dates for the expiry check use the As of date below. Leave it empty to use today, like the CLI default.</p>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <p>Built by AamirTechs. <a href="https://aamirtechs.github.io/">All tools</a> | <a href="https://github.com/aamirtechs/woo-coupon-doctor">Source</a></p>
+    <p>Privacy: this tool runs 100% in your browser. Nothing is uploaded.</p>
+  </div>
+</footer>
+<script id="core">
+// woo-coupon-doctor core logic: a faithful port of woo_coupon_doctor.py.
+// Pure functions only, no DOM access.
+// window.runTool(inputText, options) returns the CLI text report.
+// options: { asOf: "YYYY-MM-DD" (default: today), status: "" (optional status filter) }
+"use strict";
+
+var VALID_TYPES = ["percent", "fixed_cart", "fixed_product"];
+var VALID_STATUSES = ["publish", "draft", "pending", "private", "trash"];
+var TRUE_VALUES = ["1", "yes", "true", "y", "on"];
+
+function pyRepr(value) {
+  if (value === null || value === undefined) return "None";
+  var s = String(value);
+  var quote = "'";
+  if (s.indexOf("'") !== -1 && s.indexOf('"') === -1) quote = '"';
+  var out = quote;
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i);
+    var code = s.charCodeAt(i);
+    if (ch === "\\") out += "\\\\";
+    else if (ch === quote) out += "\\" + quote;
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\t") out += "\\t";
+    else if (code < 32 || code === 127) {
+      var hex = code.toString(16);
+      out += "\\x" + (hex.length < 2 ? "0" + hex : hex);
+    } else out += ch;
+  }
+  return out + quote;
+}
+
+function pyFloatStr(x) {
+  if (typeof x !== "number" || !isFinite(x)) return String(x);
+  if (Number.isInteger(x) && Math.abs(x) < 1e16) return x.toFixed(1);
+  return String(x);
+}
+
+// Parse a CSV text the way the Python csv module does: quoted fields,
+// doubled quotes, commas and newlines inside quotes, CRLF or LF endings.
+// Returns an array of rows; each row is an array of strings. Blank lines
+// (which csv.DictReader skips) are omitted.
+function parseCSVRows(text) {
+  var rows = [];
+  var row = [];
+  var field = "";
+  var inQuotes = false;
+  var fieldStarted = false;
+  var lineHasContent = false;
+  var i = 0;
+  function endField() { row.push(field); field = ""; fieldStarted = false; }
+  function endRow() {
+    endField();
+    if (lineHasContent || row.length > 1 || row[0] !== "") rows.push(row);
+    row = [];
+    lineHasContent = false;
+  }
+  while (i < text.length) {
+    var ch = text.charAt(i);
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text.charAt(i + 1) === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += ch; i++; continue;
+    }
+    if (ch === '"' && !fieldStarted && field === "") {
+      inQuotes = true; fieldStarted = true; lineHasContent = true; i++; continue;
+    }
+    if (ch === ",") { endField(); lineHasContent = true; i++; continue; }
+    if (ch === "\r") {
+      if (text.charAt(i + 1) === "\n") i++;
+      endRow(); i++; continue;
+    }
+    if (ch === "\n") { endRow(); i++; continue; }
+    field += ch; fieldStarted = true; lineHasContent = true; i++;
+  }
+  if (field !== "" || fieldStarted || row.length > 0 || lineHasContent) endRow();
+  return rows;
+}
+
+function readCSV(text) {
+  var clean = text.replace(/^\uFEFF+/, "");
+  var raw = parseCSVRows(clean);
+  if (raw.length === 0) throw new Error("input has no header row");
+  var fieldnames = raw[0];
+  var rows = [];
+  for (var r = 1; r < raw.length; r++) {
+    var obj = {};
+    for (var c = 0; c < fieldnames.length; c++) {
+      obj[fieldnames[c]] = c < raw[r].length ? raw[r][c] : null;
+    }
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function daysInMonth(y, m) {
+  return [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+}
+function makeDate(y, m, d) {
+  if (m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) return null;
+  return { y: y, m: m, d: d, key: y * 10000 + m * 100 + d };
+}
+function dateStr(dt) {
+  function p(n, w) { var s = String(n); while (s.length < w) s = "0" + s; return s; }
+  return p(dt.y, 4) + "-" + p(dt.m, 2) + "-" + p(dt.d, 2);
+}
+
+// Mirrors parse_date in the Python CLI. Returns a date object, null when
+// blank, and throws an Error with the Python message when unparseable.
+function parseDate(value, code, rule) {
+  if (value === null || value === undefined) return null;
+  var text = String(value).trim();
+  if (!text) return null;
+  var m;
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  if (m) { var a = makeDate(+m[1], +m[2], +m[3]); if (a) return a; }
+  m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(text);
+  if (m) { var b = makeDate(+m[1], +m[2], +m[3]); if (b) return b; }
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
+  if (m) { var c = makeDate(+m[3], +m[2], +m[1]); if (c) return c; }
+  m = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(text);
+  if (m) { var d = makeDate(+m[3], +m[2], +m[1]); if (d) return d; }
+  throw new Error("coupon " + code + ": " + rule + " has an unparseable date: " + pyRepr(value));
+}
+
+// Mirrors parse_number in the Python CLI.
+function parseNumber(value, code, field) {
+  if (value === null || value === undefined) return null;
+  var text = String(value).trim().replace(/\$/g, "").replace(/,/g, "");
+  if (!text) return null;
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(text)) {
+    throw new Error("coupon " + code + ": " + field + " is not a number: " + pyRepr(value));
+  }
+  return Number(text);
+}
+
+function isTrue(value) {
+  if (value === null || value === undefined) return false;
+  return TRUE_VALUES.indexOf(String(value).trim().toLowerCase()) !== -1;
+}
+
+function Finding(code, rule, severity, message) {
+  return { code: code, rule: rule, severity: severity, message: message };
+}
+function findingStr(f) {
+  return f.severity.toUpperCase() + " [" + f.rule + "] " + f.code + ": " + f.message;
+}
+
+function auditRow(row, asOf, seenCodes) {
+  var findings = [];
+  var code = String(row["code"] || "").trim();
+  var display = code ? code : "(missing code)";
+  if (!code) {
+    findings.push(Finding(display, "missing-code", "error", "coupon code is empty"));
+    return findings;
+  }
+  if (/\s/.test(code)) {
+    findings.push(Finding(code, "code-spaces", "warning",
+      "code contains spaces, which customers mistype at checkout"));
+  }
+  var lowered = code.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(seenCodes, lowered)) {
+    findings.push(Finding(code, "duplicate-code", "error",
+      "code duplicates " + seenCodes[lowered] + " (codes are case-insensitive)"));
+  } else {
+    seenCodes[lowered] = code;
+  }
+  var discountType = String(row["discount_type"] || "").trim().toLowerCase();
+  if (discountType && VALID_TYPES.indexOf(discountType) === -1) {
+    findings.push(Finding(code, "invalid-discount-type", "error",
+      "discount_type " + pyRepr(discountType) + " is not one of " + VALID_TYPES.join(", ")));
+  }
+  var freeShipping = isTrue(row["free_shipping"]);
+  var amount = null;
+  try {
+    amount = parseNumber(row["amount"], code, "amount");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-amount", "error", exc.message));
+    amount = null;
+  }
+  if (amount !== null) {
+    if (discountType === "percent" && (amount <= 0 || amount > 100)) {
+      findings.push(Finding(code, "percent-out-of-range", "error",
+        "percent discount " + pyFloatStr(amount) + " must be above 0 and at most 100"));
+    } else if ((discountType === "fixed_cart" || discountType === "fixed_product") &&
+               amount <= 0 && !freeShipping) {
+      findings.push(Finding(code, "fixed-amount-zero", "error",
+        "fixed discount amount " + pyFloatStr(amount) + " must be above 0 (unless this is a free-shipping-only coupon)"));
+    } else if (amount < 0) {
+      findings.push(Finding(code, "negative-amount", "error",
+        "discount amount " + pyFloatStr(amount) + " is negative"));
+    }
+  }
+  var usageCount = null, usageLimit = null;
+  try {
+    usageCount = parseNumber(row["usage_count"], code, "usage_count");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-usage-count", "error", exc.message));
+    usageCount = null;
+  }
+  try {
+    usageLimit = parseNumber(row["usage_limit"], code, "usage_limit");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-usage-limit", "error", exc.message));
+    usageLimit = null;
+  }
+  if (usageCount !== null && usageCount < 0) {
+    findings.push(Finding(code, "negative-usage-count", "error",
+      "usage_count " + pyFloatStr(usageCount) + " is negative"));
+  }
+  if (usageLimit !== null && usageLimit <= 0) {
+    findings.push(Finding(code, "invalid-usage-limit", "error",
+      "usage_limit " + pyFloatStr(usageLimit) + " must be above 0"));
+  }
+  if (usageCount !== null && usageLimit !== null && usageLimit > 0) {
+    if (usageCount > usageLimit) {
+      findings.push(Finding(code, "usage-over-limit", "error",
+        "used " + Math.trunc(usageCount) + " times against a limit of " + Math.trunc(usageLimit)));
+    }
+  }
+  var status = String(row["status"] || "").trim().toLowerCase();
+  if (status && VALID_STATUSES.indexOf(status) === -1) {
+    findings.push(Finding(code, "invalid-status", "warning",
+      "status " + pyRepr(status) + " is not a known WooCommerce status"));
+  }
+  var expiry = null, expiryInvalid = false, created = null;
+  try {
+    expiry = parseDate(row["expiry_date"], code, "expiry_date");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-expiry-date", "error", exc.message));
+    expiry = null; expiryInvalid = true;
+  }
+  try {
+    created = parseDate(row["date_created"], code, "date_created");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-created-date", "error", exc.message));
+    created = null;
+  }
+  if (expiry !== null && created !== null && expiry.key < created.key) {
+    findings.push(Finding(code, "expiry-before-created", "error",
+      "expiry " + dateStr(expiry) + " is before the coupon was created on " + dateStr(created)));
+  }
+  if (expiry !== null && expiry.key < asOf.key) {
+    if (status === "publish") {
+      findings.push(Finding(code, "expired-published", "error",
+        "expired on " + dateStr(expiry) + " but still published, so customers see a code that can never work"));
+    } else {
+      findings.push(Finding(code, "expired-unused", "warning",
+        "expired on " + dateStr(expiry) + " and never cleaned up"));
+    }
+  }
+  if (expiry === null && discountType === "percent" && !expiryInvalid) {
+    findings.push(Finding(code, "no-expiry-date", "warning",
+      "percent coupon has no expiry date"));
+  }
+  var minimum = null, maximum = null;
+  try {
+    minimum = parseNumber(row["minimum_amount"], code, "minimum_amount");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-minimum-amount", "error", exc.message));
+    minimum = null;
+  }
+  try {
+    maximum = parseNumber(row["maximum_amount"], code, "maximum_amount");
+  } catch (exc) {
+    findings.push(Finding(code, "invalid-maximum-amount", "error", exc.message));
+    maximum = null;
+  }
+  if (minimum !== null && maximum !== null && minimum > maximum) {
+    findings.push(Finding(code, "minimum-above-maximum", "error",
+      "minimum spend " + pyFloatStr(minimum) + " is above maximum spend " + pyFloatStr(maximum)));
+  }
+  if (usageCount !== null && usageLimit !== null && usageCount === usageLimit && status === "publish") {
+    findings.push(Finding(code, "limit-reached-published", "error",
+      "usage limit of " + Math.trunc(usageLimit) + " reached but the coupon is still published"));
+  }
+  var unbounded = (expiry === null && !expiryInvalid && usageLimit === null &&
+                   (minimum === null || minimum === 0));
+  if (unbounded && discountType === "percent") {
+    findings.push(Finding(code, "unbounded-coupon", "warning",
+      "no expiry date, no usage limit, and no minimum spend: this coupon can be used forever by anyone"));
+  }
+  return findings;
+}
+
+function todayDate() {
+  var now = new Date();
+  return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate(),
+           key: now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate() };
+}
+
+window.runTool = function(inputText, options) {
+  options = options || {};
+  var asOf;
+  if (options.asOf) {
+    var parts = String(options.asOf).trim().split("-");
+    var parsed = (parts.length === 3) ? makeDate(+parts[0], +parts[1], +parts[2]) : null;
+    if (!parsed || !/^\d{4}-\d{2}-\d{2}$/.test(String(options.asOf).trim())) {
+      return "ERROR: --as-of must be YYYY-MM-DD, got " + pyRepr(options.asOf) + "\n";
+    }
+    asOf = parsed;
+  } else {
+    asOf = todayDate();
+  }
+  var statusFilter = options.status ? String(options.status).trim().toLowerCase() : null;
+  var rows;
+  try {
+    rows = readCSV(String(inputText == null ? "" : inputText));
+  } catch (exc) {
+    return "ERROR: " + exc.message + "\n";
+  }
+  var findings = [];
+  var seenCodes = {};
+  var couponsSeen = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var rowStatus = String(rows[i]["status"] || "").trim().toLowerCase();
+    if (statusFilter && rowStatus !== statusFilter) continue;
+    couponsSeen += 1;
+    var rowFindings = auditRow(rows[i], asOf, seenCodes);
+    for (var j = 0; j < rowFindings.length; j++) findings.push(rowFindings[j]);
+  }
+  var errors = 0, warnings = 0;
+  findings.forEach(function(f) { if (f.severity === "error") errors++; else warnings++; });
+  var lines = findings.map(findingStr);
+  lines.push("");
+  lines.push("Coupons: " + couponsSeen + ", findings: " + findings.length +
+             ", errors: " + errors + ", warnings: " + warnings);
+  if (errors === 0 && warnings === 0) lines.push("All coupons clean.");
+  return lines.join("\n") + "\n";
+};
+</script>
+<script>
+(function () {
+  var SAMPLE_TEXT = `code,discount_type,amount,usage_count,usage_limit,expiry_date,date_created,minimum_amount,maximum_amount,free_shipping,status,individual_use
+WELCOME10,percent,10,45,100,2027-01-31,2026-01-05,0,,no,publish,no
+SAVE20,percent,20,0,50,2026-10-01,2026-08-15,0,,no,publish,no
+FREESHIP,fixed_cart,0,12,,2027-06-30,2026-02-01,0,,yes,publish,no
+BIG50,percent,50,120,100,2027-12-31,2026-03-10,0,,no,publish,no
+MEGA150,percent,150,5,100,2027-05-01,2026-04-20,0,,no,publish,no
+welcome10,percent,10,2,50,2027-02-01,2026-05-01,0,,no,publish,no
+OLDDEAL,percent,15,0,,2025-01-01,2024-12-01,0,,no,draft,no
+NODEAL,percent,25,0,,,2026-06-01,0,,no,publish,no
+BADTYPE,bogus,10,0,10,2027-01-01,2026-01-01,0,,no,publish,no
+MINMAX,percent,10,0,10,2027-01-01,2026-01-01,200,100,no,publish,no
+BACKWARD,percent,10,0,10,2026-10-01,2026-11-01,0,,no,publish,no
+SPACED CODE,percent,10,1,10,2027-04-01,2026-01-01,0,,no,publish,no
+,percent,10,0,10,2027-01-01,2026-01-01,0,,no,publish,no
+CLEAN5,fixed_cart,5,3,20,2027-03-01,2026-01-10,25,,no,publish,no
+`;
+  var inputEl = document.getElementById("input");
+  var outputEl = document.getElementById("output");
+  var downloadBtn = document.getElementById("download");
+  var fileName = "";
+  var lastReport = "";
+
+  document.getElementById("file").addEventListener("change", function (event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) return;
+    fileName = file.name;
+    var reader = new FileReader();
+    reader.onload = function () { inputEl.value = String(reader.result || ""); };
+    reader.readAsText(file);
+  });
+  document.getElementById("sample").addEventListener("click", function () {
+    inputEl.value = SAMPLE_TEXT;
+    fileName = "";
+  });
+  document.getElementById("run").addEventListener("click", function () {
+    var options = {
+      asOf: document.getElementById("opt-asof").value,
+      status: document.getElementById("opt-status").value
+    };
+    lastReport = window.runTool(inputEl.value, options);
+    outputEl.textContent = lastReport;
+    downloadBtn.disabled = false;
+  });
+  downloadBtn.addEventListener("click", function () {
+    if (!lastReport) return;
+    var blob = new Blob([lastReport], { type: "text/plain;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = "woo-coupon-doctor-report.txt";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+</body>
+</html>
